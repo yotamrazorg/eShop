@@ -147,9 +147,10 @@ printf 'x=@LEFT@\n' > "${SCRATCH}/u.tmpl"
 expect_false "unresolved @TOKEN@ is an error" bash -c 'source "$1"; render_at_template "$2" A=b' _ "${DEPLOY_DIR}/lib/common.sh" "${SCRATCH}/u.tmpl"
 
 echo "systemd units"
-UNIT="${DEPLOY_DIR}/systemd/eshop-catalog-api.service"
-expect_eq "explicit catalog unit == template rendered for catalog-api" \
-    "$(unit_body_from "${UNIT}")" "$(render_unit_template catalog-api)"
+mkdir -p "${SCRATCH}/units"
+UNIT="${SCRATCH}/units/eshop-catalog-api.service"
+render_unit_template catalog-api > "${UNIT}"
+expect_eq "catalog unit is rendered from the template (no explicit file)" "$(unit_source_for catalog-api)" "template"
 for d in User=eshop Group=eshop NoNewPrivileges=true ProtectSystem=strict ProtectHome=true PrivateTmp=true \
          ProtectKernelTunables=true ProtectControlGroups=true RestrictSUIDSGID=true Restart=on-failure \
          EnvironmentFile=/etc/eshop/common.env EnvironmentFile=/etc/eshop/catalog-api.env \
@@ -161,8 +162,7 @@ expect_true "unit orders after postgresql, rabbitmq, redis" grep -qE '^After=.*p
 expect_true "unit has pg_isready readiness gate" grep -q 'pg_isready -q -h 127.0.0.1 -p 5432' "${UNIT}"
 expect_true "target wants the catalog unit" grep -qxF 'Wants=eshop-catalog-api.service' "${DEPLOY_DIR}/systemd/eshop.target"
 if command -v systemd-analyze >/dev/null 2>&1; then
-    mkdir -p "${SCRATCH}/units"
-    cp "${DEPLOY_DIR}/systemd/eshop.target" "${UNIT}" "${SCRATCH}/units/"
+    cp "${DEPLOY_DIR}/systemd/eshop.target" "${SCRATCH}/units/"
     out="$(cd "${SCRATCH}/units" && systemd-analyze verify ./eshop.target ./eshop-catalog-api.service 2>&1 || true)"
     # Only complain about syntax problems in our files; missing runtime binaries/users are expected in a scratch dir.
     if grep -E 'eshop-catalog-api.service|eshop.target' <<<"${out}" | grep -Eqi 'unknown (key|section|lvalue)|invalid|bad|failed to parse|ignoring'; then

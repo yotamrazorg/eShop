@@ -127,9 +127,9 @@ and MediatR (pinned before its licence change) keep their existing flags, unchan
 
 ## Unit hardening notes
 
-`systemd/eshop-service.service.tmpl` is the template for all services;
-`systemd/eshop-catalog-api.service` is the explicit rendered copy for the milestone slice (the
-self test fails if they diverge). Both validate with `systemd-analyze verify`.
+`systemd/eshop-service.service.tmpl` is the single unit template for all services; the catalog-api
+unit is rendered from it by `lib/steps-systemd.sh` (an explicit `systemd/eshop-<name>.service` would
+override it). The rendered catalog unit validates with `systemd-analyze verify` in the self test.
 
 - `User=eshop`, `UMask=0027`, `Type=exec`, `Restart=on-failure`, start-limit window of 10 tries in
   5 minutes.

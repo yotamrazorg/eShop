@@ -3,8 +3,7 @@
 # Tokens: @NAME@ (table name, e.g. catalog-api), @ASSEMBLY@ (e.g. Catalog.API),
 # @USER@ / @GROUP@ (service account). A wired service that has no explicit
 # systemd/eshop-<name>.service file is rendered from this template; an explicit
-# file always wins. eshop-catalog-api.service is kept explicit and must stay
-# identical to this template rendered for catalog-api (tests/test-lib.sh checks it).
+# file always wins (none is shipped today; catalog-api is rendered from this template).
 #
 # Everything below the first blank line is the unit as installed.
 
