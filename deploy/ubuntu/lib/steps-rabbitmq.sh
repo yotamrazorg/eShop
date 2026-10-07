@@ -54,6 +54,14 @@ rabbit_apply_user_password() {
         printf '{"users":[{"name":"%s","password_hash":"%s","hashing_algorithm":"rabbit_password_hashing_sha256","tags":[]}]}\n' \
             "${user}" "${hash}" > "${tmpdir}/users.json"
     )
+    # Debian/Ubuntu's rabbitmqctl is a wrapper that re-execs as the 'rabbitmq' user when run as
+    # root (su rabbitmq -c ...), and 'rabbitmq' cannot read a root-only 0700 directory. Grant that
+    # group (only) read access to the hash file; the directory stays closed to everybody else.
+    if getent group rabbitmq >/dev/null 2>&1; then
+        chgrp rabbitmq "${tmpdir}" "${tmpdir}/users.json"
+        chmod 0750 "${tmpdir}"
+        chmod 0640 "${tmpdir}/users.json"
+    fi
     rabbitmqctl --quiet import_definitions "${tmpdir}/users.json" >/dev/null || rc=$?
     rm -rf "${tmpdir}"
     return "${rc}"

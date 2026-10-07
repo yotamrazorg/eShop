@@ -285,5 +285,25 @@ else
 fi
 
 echo
+echo "rabbitmq user import"
+# The Debian rabbitmqctl wrapper re-execs as the 'rabbitmq' user; the definitions file must be
+# readable by that group (and nobody else) when rabbitmqctl runs. getent/chgrp/rabbitmqctl are stubbed.
+source "${DEPLOY_DIR}/lib/steps-rabbitmq.sh"
+getent() { return 0; }
+chgrp() { RMQ_CHGRP="$*"; }
+rabbitmqctl() {
+    local f=${*: -1}
+    RMQ_FILE_MODE="$(stat -c %a "${f}")"; RMQ_DIR_MODE="$(stat -c %a "$(dirname "${f}")")"
+    RMQ_FILE_BODY="$(cat "${f}")"; RMQ_DIR="$(dirname "${f}")"
+}
+rabbit_apply_user_password eshop "pw123" >/dev/null
+unset -f getent chgrp rabbitmqctl
+expect_eq "definitions file is group-readable only (0640)" "${RMQ_FILE_MODE}" "640"
+expect_eq "definitions dir is group-traversable only (0750)" "${RMQ_DIR_MODE}" "750"
+expect_true "chgrp targets the rabbitmq group" grep -q '^rabbitmq ' <<<"${RMQ_CHGRP}"
+expect_true "definitions carry the user and a hash, not the password" bash -c '[[ "$1" == *\"eshop\"* && "$1" != *pw123* && "$1" == *password_hash* ]]' _ "${RMQ_FILE_BODY}"
+expect_false "temp dir is removed afterwards" test -e "${RMQ_DIR}"
+
+echo
 echo "Result: ${T_PASS} passed, ${T_FAIL} failed"
 [[ "${T_FAIL}" -eq 0 ]]
