@@ -59,6 +59,15 @@ sdk_version_parse() {
     printf '%d %d %d %d %d\n' "$((10#${major}))" "$((10#${minor}))" "${band}" "${patch}" "${pre}"
 }
 
+# global_json_pin FILE - sets the caller's local req/policy/pre from the "sdk" object; dies if
+# sdk.version is missing. Call it directly (not inside $(...)) so the assignments and die reach the caller.
+global_json_pin() {
+    req="$(global_json_sdk_version "$1")"
+    [[ -n "${req}" ]] || die "could not read sdk.version from $1"
+    policy="$(global_json_roll_forward "$1")"
+    pre="$(global_json_allow_prerelease "$1")"
+}
+
 # dotnet_sdk_candidate_ok REQUIRED INSTALLED ROLLFORWARD ALLOWPRERELEASE
 # Returns 0 if the single INSTALLED SDK version is acceptable for the global.json
 # pin REQUIRED under the given rollForward policy. This mirrors the .NET SDK
@@ -166,10 +175,7 @@ dotnet_list_sdk_versions() {
 # This is the ".NET toolchain consistency check" used by check-dotnet.sh/publish.sh.
 dotnet_check_global_json() {
     local gj=${1:-${ESHOP_GLOBAL_JSON}} quiet=${2:-} req policy pre
-    req="$(global_json_sdk_version "${gj}")"
-    [[ -n "${req}" ]] || die "could not read sdk.version from ${gj}"
-    policy="$(global_json_roll_forward "${gj}")"
-    pre="$(global_json_allow_prerelease "${gj}")"
+    global_json_pin "${gj}"
     local -a have
     mapfile -t have < <(dotnet_list_sdk_versions)
     if dotnet_sdk_satisfies "${req}" "${policy}" "${pre}" "${have[@]}"; then
@@ -259,10 +265,7 @@ dotnet_link_host() {
 step_dotnet() {
     log_step ".NET SDK / runtime (global.json)"
     local gj=${ESHOP_GLOBAL_JSON} req policy pre
-    req="$(global_json_sdk_version "${gj}")"
-    [[ -n "${req}" ]] || die "could not read sdk.version from ${gj}"
-    policy="$(global_json_roll_forward "${gj}")"
-    pre="$(global_json_allow_prerelease "${gj}")"
+    global_json_pin "${gj}"
     log_info "global.json requires SDK ${req} (rollForward=${policy}, allowPrerelease=${pre})"
 
     if dotnet_check_global_json "${gj}" quiet; then
