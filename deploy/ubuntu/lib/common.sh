@@ -57,8 +57,11 @@ die() {
 # ---------------------------------------------------------------------------
 # Preconditions
 # ---------------------------------------------------------------------------
+# is_root - true when running as uid 0 (non-fatal counterpart of require_root).
+is_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]]; }
+
 require_root() {
-    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    if ! is_root; then
         die "$(basename "$0") must be run as root (try: sudo $0 ...)"
     fi
 }
@@ -289,7 +292,7 @@ sd_is_active() {
 # as_postgres CMD... - run a command as the postgres OS user (peer auth on the
 # local socket). Uses runuser (util-linux, always present) when root.
 as_postgres() {
-    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    if is_root; then
         runuser -u postgres -- "$@"
     else
         sudo -n -u postgres "$@"
@@ -328,9 +331,9 @@ svc_restart() { svc_ctl restart "$1"; }
 wait_until() {
     local timeout=$1 desc=$2; shift 2
     local i
-    for ((i = 0; i < timeout; i++)); do
+    for ((i = 0; i <= timeout; i++)); do
         if "$@" >/dev/null 2>&1; then return 0; fi
-        sleep 1
+        [[ "${i}" -lt "${timeout}" ]] && sleep 1
     done
     log_error "timed out after ${timeout}s waiting for: ${desc}"
     return 1
@@ -347,10 +350,11 @@ file_fingerprint() {
     for f in "$@"; do cat "${f}" 2>/dev/null || true; done | sha256sum | cut -d' ' -f1
 }
 
-# assert_loopback_listener PORT NAME - if something listens on PORT it must be
-# bound to loopback only. Returns 0 when not listening (unknown), 1 when exposed.
+# assert_loopback_listener PORT NAME [REQUIRE_LISTENING] - if something listens on
+# PORT it must be bound to loopback only. Returns 1 when exposed. When nothing
+# listens it returns 0 (unknown) with a warning, or 1 if REQUIRE_LISTENING=1.
 assert_loopback_listener() {
-    local port=$1 name=$2 line addr bad=0 seen=0
+    local port=$1 name=$2 require_listening=${3:-0} line addr bad=0 seen=0
     command_exists ss || { log_warn "ss not available; cannot verify ${name} loopback binding"; return 0; }
     while read -r line; do
         [[ -n "${line}" ]] || continue
@@ -362,6 +366,10 @@ assert_loopback_listener() {
         esac
     done < <(ss -H -ltn "sport = :${port}" 2>/dev/null)
     if [[ "${seen}" -eq 0 ]]; then
+        if [[ "${require_listening}" -eq 1 ]]; then
+            log_error "nothing is listening on ${port} (${name} not running?)"
+            return 1
+        fi
         log_warn "nothing is listening on ${port} (${name} not running?)"
         return 0
     fi

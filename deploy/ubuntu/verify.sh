@@ -41,17 +41,6 @@ check() {
 
 section() { printf '\n%s\n' "$*"; }
 
-# retry_for SECONDS CMD... - run CMD until it succeeds or the time is up.
-retry_for() {
-    local secs=$1; shift
-    local i
-    for ((i = 0; i <= secs; i++)); do
-        if "$@" >/dev/null 2>&1; then return 0; fi
-        [[ "${i}" -lt "${secs}" ]] && sleep 1
-    done
-    return 1
-}
-
 curl_ok() { curl -fsS --max-time 10 "$@"; }
 
 # JSON helpers without jq: the Catalog response is {"pageIndex":..,"pageSize":..,"count":N,"data":[{...}]}
@@ -94,13 +83,13 @@ check_catalog_http() {
     port="$(service_port catalog-api)"
     base="${ESHOP_VERIFY_BASE_URL:-http://127.0.0.1:${port}}"
 
-    if retry_for "${WAIT_SECONDS}" curl_ok "${base}/health"; then
+    if wait_until "${WAIT_SECONDS}" "GET ${base}/health" curl_ok "${base}/health"; then
         pass "GET ${base}/health -> $(curl_ok "${base}/health" 2>/dev/null | head -c 40)"
     else
         fail "GET ${base}/health did not return 2xx within ${WAIT_SECONDS}s (is ESHOP_EXPOSE_HEALTH_ENDPOINTS=true and the unit started?)"
     fi
 
-    if retry_for "${WAIT_SECONDS}" catalog_items_ok "${base}"; then
+    if wait_until "${WAIT_SECONDS}" "catalog items at ${base}" catalog_items_ok "${base}"; then
         pass "GET /api/catalog/items?api-version=1.0 returned JSON with count > 0 (seeded)"
     else
         fail "GET /api/catalog/items?api-version=1.0 did not return JSON with items (count > 0)"
@@ -113,7 +102,7 @@ vector_present() {
 
 check_vector() {
     section "c) pgvector"
-    if [[ "${EUID:-$(id -u)}" -ne 0 ]] && ! sudo -n true >/dev/null 2>&1; then
+    if ! is_root && ! sudo -n true >/dev/null 2>&1; then
         fail "cannot query PostgreSQL as the postgres user (run as root or with passwordless sudo)"
         return
     fi
@@ -163,13 +152,13 @@ file_mode_owner() { stat -c '%a %U:%G' "$1" 2>/dev/null; }
 check_hardening() {
     section "e) hardening spot checks"
     if command_exists ss; then
-        check "PostgreSQL listens on loopback only" assert_loopback_listener_strict 5432
-        check "Redis listens on loopback only" assert_loopback_listener_strict 6379
-        check "RabbitMQ AMQP listens on loopback only" assert_loopback_listener_strict 5672
+        check "PostgreSQL listens on loopback only" assert_loopback_listener 5432 PostgreSQL 1
+        check "Redis listens on loopback only" assert_loopback_listener 6379 Redis 1
+        check "RabbitMQ AMQP listens on loopback only" assert_loopback_listener 5672 RabbitMQ 1
         local n
         while IFS= read -r n; do
             [[ "$(service_port "${n}")" != "-" ]] || continue
-            check "${n} listens on 127.0.0.1:$(service_port "${n}")" assert_loopback_listener_strict "$(service_port "${n}")"
+            check "${n} listens on 127.0.0.1:$(service_port "${n}")" assert_loopback_listener "$(service_port "${n}")" "${n}" 1
         done < <(list_wired_services)
     else
         note "ss not installed: skipped listener checks"
@@ -184,19 +173,6 @@ check_hardening() {
             fail "${f} does not exist or is not accessible (run verify.sh as root)"
         fi
     done
-}
-
-# Like assert_loopback_listener but a missing listener is a failure here.
-assert_loopback_listener_strict() {
-    local port=$1 lines addr
-    lines="$(ss -H -ltn "sport = :${port}" 2>/dev/null || true)"
-    [[ -n "${lines}" ]] || return 1
-    while read -r _ _ _ addr _; do
-        case "${addr}" in
-            127.0.0.1:"${port}"|"[::1]:${port}") ;;
-            *) return 1 ;;
-        esac
-    done <<<"${lines}"
 }
 
 # ---------------------------------------------------------------------------
