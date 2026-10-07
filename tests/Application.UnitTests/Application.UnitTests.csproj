@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Catalog.API\Catalog.API.csproj" />
     <ProjectReference Include="..\..\src\Identity.API\Identity.API.csproj" />
+    <ProjectReference Include="..\..\src\eShop.ServiceDefaults\eShop.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\src\OrderProcessor\OrderProcessor.csproj" />
     <ProjectReference Include="..\..\src\PaymentProcessor\PaymentProcessor.csproj" />
     <ProjectReference Include="..\..\src\WebhookClient\WebhookClient.csproj" />
