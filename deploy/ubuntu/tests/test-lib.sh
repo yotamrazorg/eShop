@@ -86,6 +86,60 @@ expect_true  "satisfied by ANY of several installed SDKs"           dotnet_sdk_s
 expect_false "not satisfied when none qualify"                      dotnet_sdk_satisfies 10.0.302 latestFeature false 8.0.404 10.0.100
 expect_eq "apt candidate version parsing" "$(sed -n 's/^\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' <<<"10.0.100-0ubuntu1~24.04.1")" "10.0.100"
 
+echo "dotnet SDK check (stubbed dotnet)"
+# A fake `dotnet` driven by env vars: STUB_SDKS = `--list-sdks` output, STUB_VERSION_FAIL=1 makes `--version` fail.
+STUBBIN="${SCRATCH}/stubbin"; mkdir -p "${STUBBIN}"
+cat > "${STUBBIN}/dotnet" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+    --list-sdks) printf '%s' "${STUB_SDKS:-}" ;;
+    --version)   if [[ "${STUB_VERSION_FAIL:-0}" == 1 ]]; then echo "stub: resolver failure" >&2; exit 1; fi
+                 echo "${STUB_RESOLVED:-10.0.302}" ;;
+    *) exit 0 ;;
+esac
+STUB
+chmod 0755 "${STUBBIN}/dotnet"
+# A PATH holding only the tools the scripts need and no dotnet (for the "missing" case).
+NODOTNET="${SCRATCH}/nodotnet"; mkdir -p "${NODOTNET}"
+for t in bash sed awk dirname head cat tr grep date mktemp rm id readlink; do
+    tp="$(command -v "${t}" 2>/dev/null || true)"; [[ -n "${tp}" ]] && ln -sf "${tp}" "${NODOTNET}/${t}"
+done
+CHECK="${DEPLOY_DIR}/check-dotnet.sh"
+# run_check STUB_SDKS [VAR=val...] - run check-dotnet.sh against the repo global.json with the stub first on PATH.
+run_check() { local sdks=$1; shift; env -u DOTNET PATH="${STUBBIN}:${PATH}" STUB_SDKS="${sdks}" NO_COLOR=1 "$@" bash "${CHECK}" "${GJ}"; }
+# dn [env args...] -- FUNCTION [args...] - run a steps-dotnet.sh function in a fresh shell with the given env.
+dn() {
+    local -a envargs=()
+    while [[ "$1" != "--" ]]; do envargs+=("$1"); shift; done; shift
+    env "${envargs[@]}" bash -c 'source "$1"; source "$2"; shift 2; "$@"' _ \
+        "${DEPLOY_DIR}/lib/common.sh" "${DEPLOY_DIR}/lib/steps-dotnet.sh" "$@"
+}
+SDK_OK=$'8.0.404 [/usr/share/dotnet/sdk]\n10.0.302 [/usr/share/dotnet/sdk]\n'
+SDK_OLD=$'8.0.404 [/usr/share/dotnet/sdk]\n10.0.100 [/usr/share/dotnet/sdk]\n'
+
+expect_eq "dotnet_host_path honours \$DOTNET" "$(dn DOTNET="${STUBBIN}/dotnet" -- dotnet_host_path)" "${STUBBIN}/dotnet"
+expect_eq "dotnet_host_path finds dotnet on PATH" "$(dn -u DOTNET PATH="${STUBBIN}:${PATH}" -- dotnet_host_path)" "${STUBBIN}/dotnet"
+expect_eq "dotnet_list_sdk_versions strips the [path] column" \
+    "$(dn STUB_SDKS="${SDK_OK}" DOTNET="${STUBBIN}/dotnet" -- dotnet_list_sdk_versions | tr '\n' ' ')" "8.0.404 10.0.302 "
+expect_true  "dotnet_check_global_json passes when a satisfying SDK is installed" \
+    dn STUB_SDKS="${SDK_OK}" DOTNET="${STUBBIN}/dotnet" -- dotnet_check_global_json "${GJ}"
+expect_false "dotnet_check_global_json fails when only an older SDK is installed" \
+    dn STUB_SDKS="${SDK_OLD}" DOTNET="${STUBBIN}/dotnet" -- dotnet_check_global_json "${GJ}"
+expect_false "dotnet_check_global_json fails when no SDK is listed" \
+    dn STUB_SDKS="" DOTNET="${STUBBIN}/dotnet" -- dotnet_check_global_json "${GJ}"
+
+expect_true  "check-dotnet.sh exits 0 when the SDK satisfies global.json" run_check "${SDK_OK}"
+expect_false "check-dotnet.sh exits non-zero when no SDK satisfies global.json" run_check "${SDK_OLD}"
+expect_false "check-dotnet.sh exits non-zero when the SDK resolver fails" run_check "${SDK_OK}" STUB_VERSION_FAIL=1
+expect_true  "check-dotnet.sh --help exits 0" bash "${CHECK}" --help
+# "dotnet missing" only holds if no dotnet exists at the fixed fallback locations of dotnet_host_path.
+if [[ ! -x /usr/lib/dotnet/dotnet && ! -x /usr/share/dotnet/dotnet ]]; then
+    expect_false "check-dotnet.sh exits non-zero when dotnet is not installed" \
+        env -u DOTNET PATH="${NODOTNET}" ESHOP_DOTNET_INSTALL_DIR="${SCRATCH}/no-such-dotnet" NO_COLOR=1 "${NODOTNET}/bash" "${CHECK}" "${GJ}"
+else
+    ok "dotnet-missing case skipped (a real dotnet exists at a fallback location)"
+fi
+
 echo "file helpers"
 mkdir -p "${SCRATCH}/f"
 me="$(id -un):$(id -gn)"
