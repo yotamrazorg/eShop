@@ -21,6 +21,12 @@ class Recorder:
         self.name = name
         self.base = base
 
+    def record(self, method, path, status, content_type, body, request_body=None):
+        (OUT / f"{self.name}.json").write_text(json.dumps({
+            "method": method, "path": path, "status": status,
+            "content_type": content_type, "request_body": request_body}))
+        (OUT / f"{self.name}.body").write_text(body)
+
     def request(self, method, path, record=True, base=None, **kw):
         kw.setdefault("timeout", 30)
         url = (base or self.base) + path
@@ -31,24 +37,30 @@ class Recorder:
                 body = f"<binary {ctype}, {len(r.content)} bytes, magic={r.content[:4]!r}>"
             else:
                 body = r.text
-            meta = {
-                "method": method,
-                "path": path,
-                "status": r.status_code,
-                "content_type": ctype,
-                "request_body": kw.get("json"),
-            }
-            (OUT / f"{self.name}.json").write_text(json.dumps(meta))
-            (OUT / f"{self.name}.body").write_text(body)
+            self.record(method, path, r.status_code, ctype, body, kw.get("json"))
         return r
 
     def get(self, path, **kw):
         return self.request("GET", path, **kw)
 
 
+def psql(sql):
+    return subprocess.run(
+        ["sudo", "-n", "-u", "postgres", "psql", "-X", "-q", "-tA", "-d", "catalogdb", "-c", sql],
+        capture_output=True, text=True, cwd="/tmp")
+
+
 @pytest.fixture
 def api(request):
     return Recorder(request.node.name, BASE)
+
+
+@pytest.fixture(scope="session")
+def catalog_ids():
+    """(brands, types) name -> id maps read from the live API; not recorded."""
+    brands = requests.get(f"{BASE}/api/catalog/catalogbrands?api-version=1.0", timeout=30).json()
+    types = requests.get(f"{BASE}/api/catalog/catalogtypes?api-version=1.0", timeout=30).json()
+    return ({b["brand"]: b["id"] for b in brands}, {t["type"]: t["id"] for t in types})
 
 
 @pytest.fixture(scope="session", autouse=True)

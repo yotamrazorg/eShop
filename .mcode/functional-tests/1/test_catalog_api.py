@@ -5,12 +5,12 @@ what the app happens to return.
 """
 import collections
 import json
-import os
 import pathlib
-import subprocess
 import uuid
 
 import pytest
+
+from conftest import psql
 
 SEED = json.loads(
     (pathlib.Path(__file__).resolve().parents[3] / "src/Catalog.API/Setup/catalog.json").read_text()
@@ -31,15 +31,9 @@ class TestHealth:
         assert r.text == "Healthy"
 
     def test_vector_extension_in_catalogdb(self, api):
-        out = subprocess.run(
-            ["sudo", "-n", "-u", "postgres", "psql", "-X", "-q", "-tA", "-d", "catalogdb", "-c",
-             "SELECT extname FROM pg_extension WHERE extname = 'vector'"],
-            capture_output=True, text=True, cwd="/tmp")
-        out_dir = pathlib.Path(os.environ.get("FT_OUT_DIR", "/tmp/ftout"))
-        (out_dir / "test_vector_extension_in_catalogdb.body").write_text(out.stdout.strip())
-        (out_dir / "test_vector_extension_in_catalogdb.json").write_text(
-            json.dumps({"method": "GET", "path": "psql catalogdb pg_extension", "status": 200 if out.returncode == 0 else 500,
-                        "content_type": "text/plain", "request_body": None}))
+        out = psql("SELECT extname FROM pg_extension WHERE extname = 'vector'")
+        api.record("GET", "psql catalogdb pg_extension", 200 if out.returncode == 0 else 500,
+                   "text/plain", out.stdout.strip())
         assert out.returncode == 0, out.stderr
         assert out.stdout.strip() == "vector"
 
@@ -93,20 +87,19 @@ class TestListItems:
         r = api.get(f"/api/catalog/items?{V}&pageSize=abc")
         assert r.status_code == 400
 
-    def test_list_items_v2_filters_by_name_type_brand(self, api):
+    def test_list_items_v2_filters_by_name_type_brand(self, api, catalog_ids):
+        brands, types = catalog_ids
         # Every seeded item with Brand==Daybird and Type==Footwear, name prefix filter.
         exp = [i for i in SEED if i["Brand"] == "Daybird" and i["Type"] == "Footwear" and i["Name"].startswith("Wand")]
         assert exp, "seed data assumption"
-        brands = {b["brand"]: b["id"] for b in api.get(f"/api/catalog/catalogbrands?{V}", record=False).json()}
-        types = {t["type"]: t["id"] for t in api.get(f"/api/catalog/catalogtypes?{V}", record=False).json()}
         r = api.get(f"/api/catalog/items?api-version=2.0&name=Wand&type={types['Footwear']}&brand={brands['Daybird']}")
         assert r.status_code == 200
         body = r.json()
         assert body["count"] == len(exp)
         assert {i["name"] for i in body["data"]} == {i["Name"] for i in exp}
 
-    def test_list_items_v2_repeated_brand_filter(self, api):
-        brands = {b["brand"]: b["id"] for b in api.get(f"/api/catalog/catalogbrands?{V}", record=False).json()}
+    def test_list_items_v2_repeated_brand_filter(self, api, catalog_ids):
+        brands, _ = catalog_ids
         wanted = ["Daybird", "Quester"]
         exp = [i for i in SEED if i["Brand"] in wanted]
         r = api.get("/api/catalog/items?api-version=2.0&pageSize=100"
@@ -205,9 +198,8 @@ class TestTypesBrandsFacets:
         assert brands == sorted(brands)
         assert set(brands) == {i["Brand"] for i in SEED}
 
-    def test_items_by_type_and_brand(self, api):
-        brands = {b["brand"]: b["id"] for b in api.get(f"/api/catalog/catalogbrands?{V}", record=False).json()}
-        types = {t["type"]: t["id"] for t in api.get(f"/api/catalog/catalogtypes?{V}", record=False).json()}
+    def test_items_by_type_and_brand(self, api, catalog_ids):
+        brands, types = catalog_ids
         exp = [i for i in SEED if i["Type"] == "Climbing" and i["Brand"] == "WildRunner"]
         r = api.get(f"/api/catalog/items/type/{types['Climbing']}/brand/{brands['WildRunner']}?{V}&pageSize=100")
         assert r.status_code == 200
@@ -215,8 +207,8 @@ class TestTypesBrandsFacets:
         assert body["count"] == len(exp)
         assert {i["name"] for i in body["data"]} == {i["Name"] for i in exp}
 
-    def test_items_by_brand_only(self, api):
-        brands = {b["brand"]: b["id"] for b in api.get(f"/api/catalog/catalogbrands?{V}", record=False).json()}
+    def test_items_by_brand_only(self, api, catalog_ids):
+        brands, _ = catalog_ids
         exp = [i for i in SEED if i["Brand"] == "WildRunner"]
         r = api.get(f"/api/catalog/items/type/all/brand/{brands['WildRunner']}?{V}&pageSize=100")
         assert r.status_code == 200
@@ -224,9 +216,8 @@ class TestTypesBrandsFacets:
         assert body["count"] == len(exp)
         assert {i["id"] for i in body["data"]} == {i["Id"] for i in exp}
 
-    def test_facets_match_seed_counts(self, api):
-        brands = {b["brand"]: b["id"] for b in api.get(f"/api/catalog/catalogbrands?{V}", record=False).json()}
-        types = {t["type"]: t["id"] for t in api.get(f"/api/catalog/catalogtypes?{V}", record=False).json()}
+    def test_facets_match_seed_counts(self, api, catalog_ids):
+        brands, types = catalog_ids
         r = api.get(f"/api/catalog/items/facets?{V}")
         assert r.status_code == 200
         body = r.json()
@@ -235,12 +226,6 @@ class TestTypesBrandsFacets:
         tc = collections.Counter(i["Type"] for i in SEED)
         assert {c["id"]: c["count"] for c in body["brandCounts"]} == {brands[k]: v for k, v in bc.items()}
         assert {c["id"]: c["count"] for c in body["typeCounts"]} == {types[k]: v for k, v in tc.items()}
-
-
-def _psql(sql):
-    return subprocess.run(
-        ["sudo", "-n", "-u", "postgres", "psql", "-X", "-q", "-tA", "-d", "catalogdb", "-c", sql],
-        capture_output=True, text=True, cwd="/tmp")
 
 
 class TestWriteFlow:
@@ -277,12 +262,12 @@ class TestWriteFlow:
         """Gap-fill: insert one namespaced row directly (POST is not usable, see test above)."""
         name = f"ftrun_{uuid.uuid4().hex[:10]}"
         item_id = 900000 + int(uuid.uuid4().int % 90000)
-        r = _psql(f'INSERT INTO "Catalog" ("Id","AvailableStock","CatalogBrandId","CatalogTypeId","Description",'
+        r = psql(f'INSERT INTO "Catalog" ("Id","AvailableStock","CatalogBrandId","CatalogTypeId","Description",'
                   f'"MaxStockThreshold","Name","OnReorder","PictureFileName","Price","RestockThreshold") '
                   f"VALUES ({item_id},5,1,1,'ft',10,'{name}',false,'1.webp',12.5,1)")
         assert r.returncode == 0, r.stderr
         yield item_id, name
-        _psql(f'DELETE FROM "Catalog" WHERE "Id" = {item_id}')
+        psql(f'DELETE FROM "Catalog" WHERE "Id" = {item_id}')
 
     def test_update_item_v1_changes_price(self, api, seeded_item):
         item_id, name = seeded_item
