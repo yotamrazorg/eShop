@@ -39,6 +39,15 @@ global_json_sdk_version()      { global_json_field "$1" version; }
 global_json_roll_forward()     { local r; r="$(global_json_field "$1" rollForward)"; printf '%s\n' "${r:-latestPatch}"; }
 global_json_allow_prerelease() { local r; r="$(global_json_field "$1" allowPrerelease)"; printf '%s\n' "${r:-false}"; }
 
+# global_json_pin FILE - sets the caller's local req/policy/pre from the "sdk" object; dies if
+# sdk.version is missing. Call it directly (not inside $(...)) so the assignments and die reach the caller.
+global_json_pin() {
+    req="$(global_json_sdk_version "$1")"
+    [[ -n "${req}" ]] || die "could not read sdk.version from $1"
+    policy="$(global_json_roll_forward "$1")"
+    pre="$(global_json_allow_prerelease "$1")"
+}
+
 # ---------------------------------------------------------------------------
 # SDK version arithmetic
 # ---------------------------------------------------------------------------
@@ -57,15 +66,6 @@ sdk_version_parse() {
     local major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]} third=${BASH_REMATCH[3]}
     local band=$((10#${third} / 100)) patch=$((10#${third} % 100))
     printf '%d %d %d %d %d\n' "$((10#${major}))" "$((10#${minor}))" "${band}" "${patch}" "${pre}"
-}
-
-# global_json_pin FILE - sets the caller's local req/policy/pre from the "sdk" object; dies if
-# sdk.version is missing. Call it directly (not inside $(...)) so the assignments and die reach the caller.
-global_json_pin() {
-    req="$(global_json_sdk_version "$1")"
-    [[ -n "${req}" ]] || die "could not read sdk.version from $1"
-    policy="$(global_json_roll_forward "$1")"
-    pre="$(global_json_allow_prerelease "$1")"
 }
 
 # dotnet_sdk_candidate_ok REQUIRED INSTALLED ROLLFORWARD ALLOWPRERELEASE
