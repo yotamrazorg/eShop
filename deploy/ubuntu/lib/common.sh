@@ -283,16 +283,8 @@ sd_is_active() {
     have_systemd && systemctl is-active --quiet "$1"
 }
 
-sd_start() {
-    if have_systemd; then systemctl start "$1"; else warn_no_systemd "systemctl start $1"; fi
-}
-
 sd_restart() {
     if have_systemd; then systemctl restart "$1"; else warn_no_systemd "systemctl restart $1"; fi
-}
-
-sd_reload_or_restart() {
-    if have_systemd; then systemctl reload-or-restart "$1"; else warn_no_systemd "systemctl reload-or-restart $1"; fi
 }
 
 # ---------------------------------------------------------------------------
