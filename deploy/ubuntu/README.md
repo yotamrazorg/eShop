@@ -109,9 +109,9 @@ once; re-runs only add keys that are missing and never rotate existing ones. Eve
 re-applies the stored password to its service on each run (so a manually changed password is
 repaired), and the env files are re-rendered from it. To rotate: remove a key from the file and
 re-run provisioning, then restart the units. Nothing secret lives in the repository; the env
-templates only contain `${PLACEHOLDERS}`. Note that `rabbitmqctl` takes the password as an
-argument, so it is visible in the process list for a moment during provisioning (Postgres and
-Redis passwords are passed over stdin/environment instead).
+templates only contain `${PLACEHOLDERS}`. The RabbitMQ password is applied as a salted `password_hash` through a 0700 temporary definitions
+file (`rabbitmqctl import_definitions`), so, like the Postgres (stdin) and Redis (environment)
+passwords, no clear-text secret appears in a process argument list.
 
 ## Idempotency
 

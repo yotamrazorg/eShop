@@ -30,6 +30,35 @@ rabbit_ready() { timeout 20 rabbitmqctl --quiet await_startup >/dev/null 2>&1; }
 rabbit_list_vhosts() { rabbitmqctl --quiet --silent list_vhosts name 2>/dev/null; }
 rabbit_list_users()  { rabbitmqctl --quiet --silent list_users 2>/dev/null | awk '{print $1}'; }
 
+# rabbit_password_hash PASSWORD - RabbitMQ salted SHA-256 hash: base64(salt[4] || sha256(salt || password)).
+# The clear password goes through the environment, never argv.
+rabbit_password_hash() {
+    ESHOP_RMQ_PW="$1" python3 - <<'PY'
+import base64, hashlib, os
+salt = os.urandom(4)
+pw = os.environ["ESHOP_RMQ_PW"].encode()
+print(base64.b64encode(salt + hashlib.sha256(salt + pw).digest()).decode())
+PY
+}
+
+# rabbit_apply_user_password USER PASSWORD - create the user or reset its password via
+# `rabbitmqctl import_definitions` so the password never appears in a process argument list.
+rabbit_apply_user_password() {
+    local user=$1 password=$2 hash tmpdir rc=0
+    require_cmd python3
+    hash="$(rabbit_password_hash "${password}")"
+    tmpdir="$(mktemp -d)"
+    chmod 0700 "${tmpdir}"
+    (
+        umask 077
+        printf '{"users":[{"name":"%s","password_hash":"%s","hashing_algorithm":"rabbit_password_hashing_sha256","tags":[]}]}\n' \
+            "${user}" "${hash}" > "${tmpdir}/users.json"
+    )
+    rabbitmqctl --quiet import_definitions "${tmpdir}/users.json" >/dev/null || rc=$?
+    rm -rf "${tmpdir}"
+    return "${rc}"
+}
+
 step_rabbitmq() {
     log_step "RabbitMQ (loopback, vhost ${ESHOP_RABBITMQ_VHOST}, no guest)"
     require_cmd rabbitmqctl
@@ -87,13 +116,13 @@ CONF
     fi
 
     assert_alnum RABBITMQ_PASSWORD "${RABBITMQ_PASSWORD}"
-    # Note: rabbitmqctl only accepts the password as an argument, so it is briefly
-    # visible in the process list of this root-only provisioning run.
+    # rabbitmqctl add_user/change_password would put the password in argv (/proc/<pid>/cmdline), so
+    # it is applied as a salted password_hash through a 0700 temp definitions file instead.
     if rabbit_list_users | grep -qx "${ESHOP_RABBITMQ_USER}"; then
-        rabbitmqctl --quiet change_password "${ESHOP_RABBITMQ_USER}" "${RABBITMQ_PASSWORD}" >/dev/null
+        rabbit_apply_user_password "${ESHOP_RABBITMQ_USER}" "${RABBITMQ_PASSWORD}"
         log_info "re-applied password of RabbitMQ user ${ESHOP_RABBITMQ_USER} from secrets.env"
     else
-        rabbitmqctl --quiet add_user "${ESHOP_RABBITMQ_USER}" "${RABBITMQ_PASSWORD}" >/dev/null
+        rabbit_apply_user_password "${ESHOP_RABBITMQ_USER}" "${RABBITMQ_PASSWORD}"
         log_info "created RabbitMQ user ${ESHOP_RABBITMQ_USER}"
     fi
     rabbitmqctl --quiet set_user_tags "${ESHOP_RABBITMQ_USER}" >/dev/null      # no tags: not an administrator
