@@ -1,0 +1,12 @@
+# eShop stack target: `systemctl start eshop.target` starts every wired service.
+# Each service unit has WantedBy=eshop.target, so `systemctl enable` (done by
+# provision-host.sh) also adds it to this target; Wants= below lists the services
+# wired so far. Later milestones append their units here (identity, ordering, ...).
+
+[Unit]
+Description=eShop native stack
+After=network.target postgresql.service rabbitmq-server.service redis-server.service
+Wants=eshop-catalog-api.service
+
+[Install]
+WantedBy=multi-user.target

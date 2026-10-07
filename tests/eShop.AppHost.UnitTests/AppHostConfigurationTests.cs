@@ -1,4 +1,5 @@
-﻿using Aspire.Hosting;
+﻿using System.Text.RegularExpressions;
+using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Dotnet;
 using Aspire.Hosting.Eventing;
@@ -90,6 +91,25 @@ public class AppHostConfigurationTests
         CollectionAssert.IsSubsetOf(
             new[] { "ollama", "embedding", "chat" },
             builder.Resources.Select(resource => resource.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void IdentityConnectionNameMatchesAppHostAndDeployDatabases()
+    {
+        var root = FindRepositoryRoot();
+
+        var program = File.ReadAllText(Path.Combine(root, "src", "Identity.API", "Program.cs"));
+        var match = Regex.Match(program, "AddNpgsqlDbContext<ApplicationDbContext>\\(\"(?<name>[^\"]+)\"\\)");
+        Assert.IsTrue(match.Success, "Identity.API/Program.cs no longer registers ApplicationDbContext by connection name.");
+        var name = match.Groups["name"].Value;
+
+        var appHost = File.ReadAllText(Path.Combine(root, "src", "eShop.AppHost", "AppHost.cs"));
+        StringAssert.Contains(appHost, $"AddDatabase(\"{name}\")");
+
+        var postgresStep = File.ReadAllText(Path.Combine(root, "deploy", "ubuntu", "lib", "steps-postgres.sh"));
+        var databases = Regex.Match(postgresStep, @"^ESHOP_PG_DATABASES=\((?<list>[^)]*)\)", RegexOptions.Multiline);
+        Assert.IsTrue(databases.Success, "ESHOP_PG_DATABASES not found in steps-postgres.sh.");
+        CollectionAssert.Contains(databases.Groups["list"].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries), name);
     }
 
     private static IDistributedApplicationBuilder CreateBuilder() =>

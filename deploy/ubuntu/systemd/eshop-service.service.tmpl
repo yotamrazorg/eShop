@@ -1,0 +1,76 @@
+# eShop service unit TEMPLATE (rendered by deploy/ubuntu/lib/steps-systemd.sh).
+#
+# Tokens: @NAME@ (table name, e.g. catalog-api), @ASSEMBLY@ (e.g. Catalog.API),
+# @USER@ / @GROUP@ (service account), @LOOPBACK@ / @PG_PORT@ / @AMQP_PORT@ (lib/common.sh). A wired service that has no explicit
+# systemd/eshop-<name>.service file is rendered from this template; an explicit
+# file always wins (none is shipped today; catalog-api is rendered from this template).
+#
+# Everything below the first blank line is the unit as installed.
+
+[Unit]
+Description=eShop @NAME@
+After=network.target postgresql.service rabbitmq-server.service redis-server.service
+Wants=postgresql.service rabbitmq-server.service redis-server.service
+PartOf=eshop.target
+# Tolerate start-up races (database/broker still starting): retry for a few minutes.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=exec
+User=@USER@
+Group=@GROUP@
+UMask=0027
+WorkingDirectory=/opt/eshop/@NAME@
+# Shared contract first, then service specific settings (later files win).
+EnvironmentFile=/etc/eshop/common.env
+EnvironmentFile=/etc/eshop/@NAME@.env
+# HOME gives the runtime a writable location for ASP.NET Core DataProtection keys
+# (~/.aspnet/DataProtection-Keys) inside the only read-write path below.
+Environment=HOME=/var/lib/eshop
+
+# Readiness gates (the AppHost WaitFor graph): PostgreSQL via pg_isready, RabbitMQ via a TCP
+# probe. '$$' is systemd's escape for a literal '$'. Restart= covers anything slower.
+ExecStartPre=/bin/bash -c 'for i in $$(seq 1 60); do /usr/bin/pg_isready -q -h @LOOPBACK@ -p @PG_PORT@ && exit 0; sleep 1; done; echo "PostgreSQL is not ready on @LOOPBACK@:@PG_PORT@" >&2; exit 1'
+ExecStartPre=/bin/bash -c 'for i in $$(seq 1 60); do (exec 3<>/dev/tcp/@LOOPBACK@/@AMQP_PORT@) 2>/dev/null && exit 0; sleep 1; done; echo "RabbitMQ is not accepting connections on @LOOPBACK@:@AMQP_PORT@" >&2; exit 1'
+# $ESHOP_CONFIG_ARGS (from common.env) carries the --Services:<name>:http:0=<url> endpoints.
+ExecStart=/usr/bin/dotnet /opt/eshop/@NAME@/@ASSEMBLY@.dll $ESHOP_CONFIG_ARGS
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=180
+TimeoutStopSec=30
+SyslogIdentifier=eshop-@NAME@
+
+# --- Sandboxing -----------------------------------------------------------------
+NoNewPrivileges=true
+# The whole file system is read-only except what is listed in ReadWritePaths.
+ProtectSystem=strict
+ProtectHome=true
+# Private /tmp (ASP.NET Core / .NET write temp files there).
+PrivateTmp=true
+PrivateDevices=true
+# Only /var/lib/eshop needs to be writable (DataProtection keys; later the Identity
+# signing key). /opt/eshop (binaries) and /etc/eshop (config) stay read-only.
+ReadWritePaths=/var/lib/eshop
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+# AF_NETLINK: glibc/.NET enumerate network interfaces through netlink.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=true
+RemoveIPC=true
+SystemCallArchitectures=native
+# Ports are > 1024 and nothing needs privileges.
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Deliberately NOT set: MemoryDenyWriteExecute (the .NET JIT needs W+X mappings).
+
+[Install]
+WantedBy=eshop.target

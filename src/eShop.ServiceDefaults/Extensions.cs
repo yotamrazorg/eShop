@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -13,6 +14,18 @@ namespace eShop.ServiceDefaults;
 
 public static partial class Extensions
 {
+    /// <summary>
+    /// Configuration key (also usable as an environment variable) that opts in to mapping the
+    /// <c>/health</c> and <c>/alive</c> endpoints outside the Development environment.
+    /// </summary>
+    public const string ExposeHealthEndpointsEnvironmentKey = "ESHOP_EXPOSE_HEALTH_ENDPOINTS";
+
+    /// <summary>
+    /// Hierarchical configuration key (for example in appsettings.json) equivalent to
+    /// <see cref="ExposeHealthEndpointsEnvironmentKey"/>.
+    /// </summary>
+    public const string ExposeHealthEndpointsConfigurationKey = "ServiceDefaults:ExposeHealthEndpoints";
+
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         builder.AddBasicServiceDefaults();
@@ -110,9 +123,13 @@ public static partial class Extensions
         // Uncomment the following line to enable the Prometheus endpoint (requires the OpenTelemetry.Exporter.Prometheus.AspNetCore package)
         // app.MapPrometheusScrapingEndpoint();
 
-        // Adding health checks endpoints to applications in non-development environments has security implications.
+        // Adding health checks endpoints to applications in non-development environments has security implications:
+        // the endpoints are unauthenticated and can reveal details about the application and its dependencies.
         // See https://aka.ms/dotnet/aspire/healthchecks for details before enabling these endpoints in non-development environments.
-        if (app.Environment.IsDevelopment())
+        // They are always mapped in Development. Elsewhere they are off by default and are only mapped when explicitly
+        // opted in by setting ESHOP_EXPOSE_HEALTH_ENDPOINTS (or ServiceDefaults:ExposeHealthEndpoints) to true,
+        // for example on a host where the service is only reachable on a trusted network or loopback.
+        if (app.Environment.IsDevelopment() || IsHealthEndpointsExposureEnabled(app.Configuration))
         {
             // All health checks must pass for app to be considered ready to accept traffic after starting
             app.MapHealthChecks("/health");
@@ -125,5 +142,14 @@ public static partial class Extensions
         }
 
         return app;
+    }
+
+    private static bool IsHealthEndpointsExposureEnabled(IConfiguration configuration)
+    {
+        // Missing or invalid (non-boolean) values are treated as false so the default stays secure.
+        return IsTrue(configuration[ExposeHealthEndpointsEnvironmentKey])
+            || IsTrue(configuration[ExposeHealthEndpointsConfigurationKey]);
+
+        static bool IsTrue(string? value) => bool.TryParse(value, out var result) && result;
     }
 }
