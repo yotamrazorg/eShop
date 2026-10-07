@@ -157,3 +157,17 @@ Paths are overridable so helpers can be exercised in a scratch directory: `ESHOP
 `ESHOP_FORCE_NO_SYSTEMD=1`, `ESHOP_VERIFY_BASE_URL`. `tests/test-lib.sh` uses them to cover the
 SDK version logic, the service table, template rendering and determinism, file helpers, secret
 generation, unit/template consistency and script hygiene. Do not set them for real provisioning.
+
+## Pre-existing defects fixed outside ServiceDefaults
+
+Milestone 1 is otherwise additive (the only other C# change is the ServiceDefaults health opt-in).
+Three one-line fixes to pre-existing runtime source were made because the native deployment and the
+existing unit tests could not work without them (commit f79cc33):
+
+| File | Change | Reason |
+|---|---|---|
+| `src/Identity.API/Configuration/Config.cs` | webapp `RedirectUri` `/authentication/login-callback` -> `/signin-oidc` | The WebApp OIDC handler uses `/signin-oidc`; `IdentityConfigurationTests` asserts it. |
+| `src/Identity.API/Program.cs` | Npgsql connection name `identity-store` -> `identitydb` | AppHost and the provisioned database are named `identitydb`; the old name never resolved. |
+| `src/PaymentProcessor/IntegrationEvents/Events/OrderPaymentSucceededIntegrationEvent.cs` | removed `[JsonPropertyName("OrderNumber")]` on `OrderId` | Ordering.API's consumer event expects `OrderId`; the rename deserialised to 0. |
+
+Operators: set `ConnectionStrings__identitydb` (not `__identity-store`) for Identity.API.
