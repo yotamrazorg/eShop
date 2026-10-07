@@ -112,6 +112,39 @@ expect_true "secret is alphanumeric" assert_alnum x "${s1}"
 [[ "${s1}" != "${s2}" ]] && ok "secrets differ" || bad "secrets differ"
 expect_false "non-alnum secret rejected" bash -c 'source "$1"; assert_alnum x "a b"' _ "${DEPLOY_DIR}/lib/common.sh"
 
+# step_secrets/load_secrets: generate-once semantics. chown is stubbed (suite runs rootless);
+# all paths are already redirected into ${SCRATCH}.
+chown() { :; }
+rm -f "${ESHOP_SECRETS_FILE}"
+step_secrets >/dev/null
+expect_eq "secrets file mode is 0600" "$(stat -c %a "${ESHOP_SECRETS_FILE}")" "600"
+for k in "${ESHOP_SECRET_KEYS[@]}"; do
+    expect_eq "step_secrets generated ${k} (32 alnum)" "$(secret_get "${k}" | grep -cE '^[A-Za-z0-9]{32}$')" "1"
+done
+snap1="$(cat "${ESHOP_SECRETS_FILE}")"
+step_secrets >/dev/null
+expect_eq "re-run does not rotate existing secrets" "$(cat "${ESHOP_SECRETS_FILE}")" "${snap1}"
+expect_eq "re-run reports none regenerated" "$(step_secrets 2>&1 | grep -c 'none regenerated')" "1"
+old_redis="$(secret_get REDIS_PASSWORD)"; old_pg="$(secret_get POSTGRES_PASSWORD)"
+sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=/' "${ESHOP_SECRETS_FILE}"
+step_secrets >/dev/null
+new_redis="$(secret_get REDIS_PASSWORD)"
+expect_eq "empty secret regenerated (32 chars)" "${#new_redis}" "32"
+[[ "${new_redis}" != "${old_redis}" ]] && ok "regenerated value differs from old" || bad "regenerated value differs from old"
+expect_eq "other secrets untouched when one is regenerated" "$(secret_get POSTGRES_PASSWORD)" "${old_pg}"
+expect_eq "no duplicate REDIS_PASSWORD line" "$(grep -c '^REDIS_PASSWORD=' "${ESHOP_SECRETS_FILE}")" "1"
+sed -i '/^RABBITMQ_PASSWORD=/d' "${ESHOP_SECRETS_FILE}"; chmod 0644 "${ESHOP_SECRETS_FILE}"
+step_secrets >/dev/null
+expect_eq "missing key appended" "$(secret_get RABBITMQ_PASSWORD | grep -cE '^[A-Za-z0-9]{32}$')" "1"
+expect_eq "mode drift repaired to 0600" "$(stat -c %a "${ESHOP_SECRETS_FILE}")" "600"
+( unset POSTGRES_PASSWORD REDIS_PASSWORD RABBITMQ_PASSWORD; load_secrets; [[ "${REDIS_PASSWORD}" == "$(secret_get REDIS_PASSWORD)" ]] ) \
+    && ok "load_secrets exports stored values" || bad "load_secrets exports stored values"
+sed -i '/^POSTGRES_PASSWORD=/d' "${ESHOP_SECRETS_FILE}"
+expect_false "load_secrets dies when a key is missing" bash -c 'source "$1"; load_secrets' _ "${DEPLOY_DIR}/lib/steps-secrets.sh"
+rm -f "${ESHOP_SECRETS_FILE}"
+expect_false "load_secrets dies when file is missing" bash -c 'source "$1"; load_secrets' _ "${DEPLOY_DIR}/lib/steps-secrets.sh"
+unset -f chown
+
 echo "template rendering / env contract"
 mkdir -p "${ESHOP_ETC_DIR}"
 POSTGRES_PASSWORD=pgPass1 REDIS_PASSWORD=redisPass2 RABBITMQ_PASSWORD=mqPass3
