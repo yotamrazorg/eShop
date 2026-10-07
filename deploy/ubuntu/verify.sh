@@ -10,9 +10,11 @@
 #   e) hardening spot checks: Postgres/Redis/RabbitMQ and the services listen on loopback only,
 #      secrets/env file permissions
 #
-# Usage: deploy/ubuntu/verify.sh [--wait SECONDS]     (needs root or passwordless sudo for check c)
+# Usage: deploy/ubuntu/verify.sh [--wait SECONDS] [--no-systemd]  (run as root, or with passwordless sudo for check c)
 #   --wait N   keep retrying the HTTP checks for up to N seconds (default 60) to ride out
 #              the EF migrations + seeding that run at the first service start
+#   --no-systemd  skip the systemd unit checks (a) and unit dependency inspection (d); explicit
+#              opt-in for hosts/containers where systemd is not PID 1. Default is strict.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +27,7 @@ PASS=0
 FAIL=0
 FAILED_CHECKS=()
 WAIT_SECONDS=60
+SKIP_SYSTEMD=0
 
 pass() { PASS=$((PASS + 1)); printf '  PASS  %s\n' "$*"; }
 fail() { FAIL=$((FAIL + 1)); FAILED_CHECKS+=("$*"); printf '  FAIL  %s\n' "$*"; }
@@ -61,8 +64,12 @@ json_count_gt0() {
 # ---------------------------------------------------------------------------
 check_units() {
     section "a) systemd units"
+    if [[ "${SKIP_SYSTEMD}" -eq 1 ]]; then
+        note "--no-systemd given: unit checks skipped (only for hosts without systemd as PID 1, e.g. container sandboxes)"
+        return
+    fi
     if ! have_systemd; then
-        fail "systemd is not running on this host; cannot check units"
+        fail "systemd is not running on this host; cannot check units (use --no-systemd only on hosts that intentionally run without it)"
         return
     fi
     local n u
@@ -128,8 +135,8 @@ check_no_container_runtime() {
     done
     [[ "${found}" -eq 1 ]] || pass "no container runtime (docker/podman/containerd) installed"
 
-    if ! have_systemd; then
-        note "systemd not running: skipped unit dependency inspection"
+    if [[ "${SKIP_SYSTEMD}" -eq 1 ]] || ! have_systemd; then
+        note "systemd checks skipped: unit dependency inspection not performed"
         return
     fi
     local deps
@@ -197,7 +204,8 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --wait) [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || die "--wait needs a number of seconds"; WAIT_SECONDS=$2; shift 2 ;;
-            -h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+            --no-systemd) SKIP_SYSTEMD=1; shift ;;
+            -h|--help) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
             *) die "unknown argument: $1" ;;
         esac
     done
