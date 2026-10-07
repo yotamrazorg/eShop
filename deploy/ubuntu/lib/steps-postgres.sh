@@ -15,12 +15,17 @@ ESHOP_PG_CONF_DIR="/etc/postgresql/${ESHOP_PG_VERSION}/${ESHOP_PG_CLUSTER}"
 ESHOP_PG_HBA_BEGIN="# BEGIN eshop managed (provision-host.sh) - do not edit between markers"
 ESHOP_PG_HBA_END="# END eshop managed"
 
-pg_cluster_online() {
-    pg_lsclusters -h 2>/dev/null | awk -v v="${ESHOP_PG_VERSION}" -v c="${ESHOP_PG_CLUSTER}" '$1==v && $2==c && $4=="online"{f=1} END{exit !f}'
+# pg_cluster_status - status column of the managed cluster (empty when it does not exist).
+pg_cluster_status() {
+    pg_lsclusters -h 2>/dev/null | awk -v v="${ESHOP_PG_VERSION}" -v c="${ESHOP_PG_CLUSTER}" '$1==v && $2==c{print $4; exit}'
 }
 
-pg_cluster_exists() {
-    pg_lsclusters -h 2>/dev/null | awk -v v="${ESHOP_PG_VERSION}" -v c="${ESHOP_PG_CLUSTER}" '$1==v && $2==c{f=1} END{exit !f}'
+pg_cluster_exists() { [[ -n "$(pg_cluster_status)" ]]; }
+pg_cluster_online() { [[ "$(pg_cluster_status)" == "online" ]]; }
+
+# pg_tcp_login PASSWORD - can ESHOP_PG_ROLE log in to catalogdb over loopback TCP with PASSWORD?
+pg_tcp_login() {
+    PGPASSWORD="$1" psql -X -q -h "${ESHOP_LOOPBACK_ADDR}" -p "${ESHOP_PG_PORT}" -U "${ESHOP_PG_ROLE}" -d catalogdb -tA -c "SELECT 1" >/dev/null 2>&1
 }
 
 pg_ready_socket() { pg_isready -q -h /var/run/postgresql; }
@@ -47,7 +52,7 @@ pg_scalar() {
 pg_hba_desired() {
     local hba=$1
     printf '%s\n' "${ESHOP_PG_HBA_BEGIN}"
-    printf '%s\n' "host    all             all             127.0.0.1/32            scram-sha-256"
+    printf '%s\n' "host    all             all             ${ESHOP_LOOPBACK_ADDR}/32            scram-sha-256"
     printf '%s\n' "host    all             all             ::1/128                 scram-sha-256"
     printf '%s\n' "${ESHOP_PG_HBA_END}"
     awk -v b="${ESHOP_PG_HBA_BEGIN}" -v e="${ESHOP_PG_HBA_END}" '
@@ -77,10 +82,10 @@ step_postgres() {
         restart_needed=1
     fi
     ensure_dir "${ESHOP_PG_CONF_DIR}/conf.d" 0755 postgres:postgres
-    if write_file_if_changed "${ESHOP_PG_CONF_DIR}/conf.d/90-eshop.conf" 0644 postgres:postgres <<'CONF'
+    if write_file_if_changed "${ESHOP_PG_CONF_DIR}/conf.d/90-eshop.conf" 0644 postgres:postgres <<CONF
 # Managed by eshop provision-host.sh. PostgreSQL is reachable on loopback only.
-listen_addresses = '127.0.0.1'
-port = 5432
+listen_addresses = '${ESHOP_LOOPBACK_ADDR}'
+port = ${ESHOP_PG_PORT}
 password_encryption = 'scram-sha-256'
 CONF
     then
@@ -111,14 +116,14 @@ CONF
     # Verify the effective settings rather than trusting the files.
     local listen
     listen="$(pg_scalar "SHOW listen_addresses")"
-    if [[ "${listen}" != "127.0.0.1" ]]; then
-        log_warn "listen_addresses is '${listen}', restarting to apply '127.0.0.1'"
+    if [[ "${listen}" != "${ESHOP_LOOPBACK_ADDR}" ]]; then
+        log_warn "listen_addresses is '${listen}', restarting to apply '${ESHOP_LOOPBACK_ADDR}'"
         pg_cluster_ctl restart
         wait_until 60 "PostgreSQL restart" pg_ready_socket || die "PostgreSQL did not come back after restart"
         listen="$(pg_scalar "SHOW listen_addresses")"
-        [[ "${listen}" == "127.0.0.1" ]] || die "PostgreSQL listen_addresses is '${listen}', expected 127.0.0.1"
+        [[ "${listen}" == "${ESHOP_LOOPBACK_ADDR}" ]] || die "PostgreSQL listen_addresses is '${listen}', expected ${ESHOP_LOOPBACK_ADDR}"
     fi
-    assert_loopback_listener 5432 PostgreSQL || die "PostgreSQL is not restricted to loopback"
+    assert_loopback_listener "${ESHOP_PG_PORT}" PostgreSQL || die "PostgreSQL is not restricted to loopback"
     log_ok "PostgreSQL listens on loopback only, scram-sha-256 for TCP"
 
     # --- role (password always re-applied from secrets.env) -----------------------------
@@ -162,12 +167,12 @@ SQL
     log_ok "extension vector enabled in: ${ESHOP_PG_VECTOR_DATABASES[*]}"
 
     # --- prove the credentials work over loopback TCP ------------------------------------
-    if PGPASSWORD="${POSTGRES_PASSWORD}" psql -X -q -h 127.0.0.1 -p 5432 -U "${ESHOP_PG_ROLE}" -d catalogdb -tA -c "SELECT 1" >/dev/null 2>&1; then
-        log_ok "scram login as ${ESHOP_PG_ROLE}@127.0.0.1/catalogdb works"
+    if pg_tcp_login "${POSTGRES_PASSWORD}"; then
+        log_ok "scram login as ${ESHOP_PG_ROLE}@${ESHOP_LOOPBACK_ADDR}/catalogdb works"
     else
-        die "cannot log in as ${ESHOP_PG_ROLE} over 127.0.0.1 with the secrets.env password"
+        die "cannot log in as ${ESHOP_PG_ROLE} over ${ESHOP_LOOPBACK_ADDR} with the secrets.env password"
     fi
-    if PGPASSWORD="wrong-${POSTGRES_PASSWORD}" psql -X -q -h 127.0.0.1 -p 5432 -U "${ESHOP_PG_ROLE}" -d catalogdb -tA -c "SELECT 1" >/dev/null 2>&1; then
+    if pg_tcp_login "wrong-${POSTGRES_PASSWORD}"; then
         die "PostgreSQL accepted a wrong password over TCP: authentication is not enforced"
     fi
 }

@@ -15,7 +15,7 @@ ESHOP_REDIS_SERVICE="${ESHOP_REDIS_SERVICE:-redis-server}"
 
 # redis_cli_auth ARGS... - redis-cli authenticated through REDISCLI_AUTH (keeps the password out of argv).
 redis_cli_auth() {
-    REDISCLI_AUTH="${REDIS_PASSWORD}" redis-cli -h 127.0.0.1 -p 6379 --no-auth-warning "$@"
+    REDISCLI_AUTH="${REDIS_PASSWORD}" redis-cli -h "${ESHOP_LOOPBACK_ADDR}" -p "${ESHOP_REDIS_PORT}" --no-auth-warning "$@"
 }
 
 redis_ping_auth() { [[ "$(redis_cli_auth ping 2>/dev/null)" == "PONG" ]]; }
@@ -31,8 +31,8 @@ step_redis() {
 
     if write_file_if_changed "${ESHOP_REDIS_EXTRA_CONF}" 0640 "root:${redis_group}" <<CONF
 # Managed by eshop provision-host.sh - re-generated from /etc/eshop/secrets.env.
-bind 127.0.0.1
-port 6379
+bind ${ESHOP_LOOPBACK_ADDR}
+port ${ESHOP_REDIS_PORT}
 protected-mode yes
 requirepass ${REDIS_PASSWORD}
 CONF
@@ -60,9 +60,9 @@ CONF
         fail_or_warn "Redis does not answer PING with the secrets.env password"
         return 0
     fi
-    if [[ "$(REDISCLI_AUTH='' redis-cli -h 127.0.0.1 -p 6379 ping 2>&1 || true)" == "PONG" ]]; then
+    if [[ "$(REDISCLI_AUTH='' redis-cli -h "${ESHOP_LOOPBACK_ADDR}" -p "${ESHOP_REDIS_PORT}" ping 2>&1 || true)" == "PONG" ]]; then
         die "Redis answered an unauthenticated PING: requirepass is not in effect"
     fi
-    assert_loopback_listener 6379 Redis || die "Redis is not restricted to loopback"
+    assert_loopback_listener "${ESHOP_REDIS_PORT}" Redis || die "Redis is not restricted to loopback"
     log_ok "Redis answers PING with authentication, rejects anonymous access, loopback only"
 }

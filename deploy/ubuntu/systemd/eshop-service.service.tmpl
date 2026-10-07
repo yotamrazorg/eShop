@@ -1,7 +1,7 @@
 # eShop service unit TEMPLATE (rendered by deploy/ubuntu/lib/steps-systemd.sh).
 #
 # Tokens: @NAME@ (table name, e.g. catalog-api), @ASSEMBLY@ (e.g. Catalog.API),
-# @USER@ / @GROUP@ (service account). A wired service that has no explicit
+# @USER@ / @GROUP@ (service account), @LOOPBACK@ / @PG_PORT@ / @AMQP_PORT@ (lib/common.sh). A wired service that has no explicit
 # systemd/eshop-<name>.service file is rendered from this template; an explicit
 # file always wins (none is shipped today; catalog-api is rendered from this template).
 #
@@ -31,8 +31,8 @@ Environment=HOME=/var/lib/eshop
 
 # Readiness gates (the AppHost WaitFor graph): PostgreSQL via pg_isready, RabbitMQ via a TCP
 # probe. '$$' is systemd's escape for a literal '$'. Restart= covers anything slower.
-ExecStartPre=/bin/bash -c 'for i in $$(seq 1 60); do /usr/bin/pg_isready -q -h 127.0.0.1 -p 5432 && exit 0; sleep 1; done; echo "PostgreSQL is not ready on 127.0.0.1:5432" >&2; exit 1'
-ExecStartPre=/bin/bash -c 'for i in $$(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/5672) 2>/dev/null && exit 0; sleep 1; done; echo "RabbitMQ is not accepting connections on 127.0.0.1:5672" >&2; exit 1'
+ExecStartPre=/bin/bash -c 'for i in $$(seq 1 60); do /usr/bin/pg_isready -q -h @LOOPBACK@ -p @PG_PORT@ && exit 0; sleep 1; done; echo "PostgreSQL is not ready on @LOOPBACK@:@PG_PORT@" >&2; exit 1'
+ExecStartPre=/bin/bash -c 'for i in $$(seq 1 60); do (exec 3<>/dev/tcp/@LOOPBACK@/@AMQP_PORT@) 2>/dev/null && exit 0; sleep 1; done; echo "RabbitMQ is not accepting connections on @LOOPBACK@:@AMQP_PORT@" >&2; exit 1'
 # $ESHOP_CONFIG_ARGS (from common.env) carries the --Services:<name>:http:0=<url> endpoints.
 ExecStart=/usr/bin/dotnet /opt/eshop/@NAME@/@ASSEMBLY@.dll $ESHOP_CONFIG_ARGS
 Restart=on-failure

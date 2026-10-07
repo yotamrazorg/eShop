@@ -81,7 +81,7 @@ check_catalog_http() {
     section "b) catalog-api HTTP"
     local port base
     port="$(service_port catalog-api)"
-    base="${ESHOP_VERIFY_BASE_URL:-http://127.0.0.1:${port}}"
+    base="${ESHOP_VERIFY_BASE_URL:-http://${ESHOP_LOOPBACK_ADDR}:${port}}"
 
     if wait_until "${WAIT_SECONDS}" "GET ${base}/health" curl_ok "${base}/health"; then
         pass "GET ${base}/health -> $(curl_ok "${base}/health" 2>/dev/null | head -c 40)"
@@ -152,13 +152,13 @@ file_mode_owner() { stat -c '%a %U:%G' "$1" 2>/dev/null; }
 check_hardening() {
     section "e) hardening spot checks"
     if command_exists ss; then
-        check "PostgreSQL listens on loopback only" assert_loopback_listener 5432 PostgreSQL 1
-        check "Redis listens on loopback only" assert_loopback_listener 6379 Redis 1
-        check "RabbitMQ AMQP listens on loopback only" assert_loopback_listener 5672 RabbitMQ 1
+        check "PostgreSQL listens on loopback only" assert_loopback_listener "${ESHOP_PG_PORT}" PostgreSQL 1
+        check "Redis listens on loopback only" assert_loopback_listener "${ESHOP_REDIS_PORT}" Redis 1
+        check "RabbitMQ AMQP listens on loopback only" assert_loopback_listener "${ESHOP_AMQP_PORT}" RabbitMQ 1
         local n
         while IFS= read -r n; do
             [[ "$(service_port "${n}")" != "-" ]] || continue
-            check "${n} listens on 127.0.0.1:$(service_port "${n}")" assert_loopback_listener "$(service_port "${n}")" "${n}" 1
+            check "${n} listens on ${ESHOP_LOOPBACK_ADDR}:$(service_port "${n}")" assert_loopback_listener "$(service_port "${n}")" "${n}" 1
         done < <(list_wired_services)
     else
         note "ss not installed: skipped listener checks"

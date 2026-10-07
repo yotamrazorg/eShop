@@ -100,11 +100,11 @@ list_wired_services() {
     done < <(list_services)
 }
 
-# service_endpoint NAME - http://127.0.0.1:PORT (empty for services without a port).
+# service_endpoint NAME - http://<loopback>:PORT (empty for services without a port).
 service_endpoint() {
     local p
     p="$(service_port "$1")" || return 1
-    [[ "${p}" == "-" ]] || printf 'http://127.0.0.1:%s\n' "${p}"
+    [[ "${p}" == "-" ]] || printf 'http://%s:%s\n' "${ESHOP_LOOPBACK_ADDR}" "${p}"
 }
 
 # service_discovery_lines - the contract keys Services__<name>__http__0=<url>,

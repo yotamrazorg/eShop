@@ -85,6 +85,10 @@ Rendered by `envsubst` with an explicit variable whitelist from `env/*.env.tmpl`
 | `Services__<name>__http__0` | see note | `http://127.0.0.1:<port>` for every service in the table |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | common.env | commented out; uncomment to export OTLP |
 
+The loopback address and the PostgreSQL / Redis / RabbitMQ ports are defined once in `lib/common.sh`
+(`ESHOP_LOOPBACK_ADDR`, `ESHOP_PG_PORT`, `ESHOP_REDIS_PORT`, `ESHOP_AMQP_PORT`) and fed into the env
+files, unit template and service configs from there.
+
 `ConnectionStrings__identitydb|orderingdb|webhooksdb` follow in the milestones that wire those services.
 
 **Service discovery keys and systemd.** systemd `EnvironmentFile=` ignores lines whose variable

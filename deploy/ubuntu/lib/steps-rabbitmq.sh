@@ -40,8 +40,8 @@ step_rabbitmq() {
     [[ -e "${ESHOP_RABBITMQ_ENV_CONF}" ]] || : > "${ESHOP_RABBITMQ_ENV_CONF}"
     local before after restart_needed=0
     before="$(file_fingerprint "${ESHOP_RABBITMQ_ENV_CONF}")"
-    ensure_kv "${ESHOP_RABBITMQ_ENV_CONF}" NODE_IP_ADDRESS "127.0.0.1"
-    ensure_kv "${ESHOP_RABBITMQ_ENV_CONF}" ERL_EPMD_ADDRESS "127.0.0.1"
+    ensure_kv "${ESHOP_RABBITMQ_ENV_CONF}" NODE_IP_ADDRESS "${ESHOP_LOOPBACK_ADDR}"
+    ensure_kv "${ESHOP_RABBITMQ_ENV_CONF}" ERL_EPMD_ADDRESS "${ESHOP_LOOPBACK_ADDR}"
     ensure_kv "${ESHOP_RABBITMQ_ENV_CONF}" SERVER_ADDITIONAL_ERL_ARGS '"-kernel inet_dist_use_interface {127,0,0,1}"'
     after="$(file_fingerprint "${ESHOP_RABBITMQ_ENV_CONF}")"
     [[ "${before}" == "${after}" ]] || restart_needed=1
@@ -107,5 +107,5 @@ CONF
         log_ok "guest user already absent"
     fi
 
-    assert_loopback_listener 5672 RabbitMQ || die "RabbitMQ AMQP listener is not restricted to loopback"
+    assert_loopback_listener "${ESHOP_AMQP_PORT}" RabbitMQ || die "RabbitMQ AMQP listener is not restricted to loopback"
 }

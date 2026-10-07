@@ -32,7 +32,10 @@ render_unit_template() {
         "NAME=${name}" \
         "ASSEMBLY=$(service_assembly "${name}")" \
         "USER=$(service_user "${name}")" \
-        "GROUP=${ESHOP_GROUP}"
+        "GROUP=${ESHOP_GROUP}" \
+        "LOOPBACK=${ESHOP_LOOPBACK_ADDR}" \
+        "PG_PORT=${ESHOP_PG_PORT}" \
+        "AMQP_PORT=${ESHOP_AMQP_PORT}"
     rm -f "${tmp}"
 }
 

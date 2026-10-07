@@ -146,6 +146,12 @@ expect_false "unset whitelisted variable is an error" bash -c 'source "$1"; unse
 printf 'x=@LEFT@\n' > "${SCRATCH}/u.tmpl"
 expect_false "unresolved @TOKEN@ is an error" bash -c 'source "$1"; render_at_template "$2" A=b' _ "${DEPLOY_DIR}/lib/common.sh" "${SCRATCH}/u.tmpl"
 
+echo "infrastructure constants"
+expect_eq "loopback address" "${ESHOP_LOOPBACK_ADDR}" "127.0.0.1"
+expect_eq "postgres port" "${ESHOP_PG_PORT}" "5432"
+expect_eq "redis port" "${ESHOP_REDIS_PORT}" "6379"
+expect_eq "amqp port" "${ESHOP_AMQP_PORT}" "5672"
+
 echo "systemd units"
 mkdir -p "${SCRATCH}/units"
 UNIT="${SCRATCH}/units/eshop-catalog-api.service"

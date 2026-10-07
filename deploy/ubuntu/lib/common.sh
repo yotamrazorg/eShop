@@ -34,6 +34,13 @@ ESHOP_STATE_DIR="${ESHOP_STATE_DIR:-/var/lib/eshop}"
 ESHOP_SYSTEMD_DIR="${ESHOP_SYSTEMD_DIR:-/etc/systemd/system}"
 ESHOP_SECRETS_FILE="${ESHOP_SECRETS_FILE:-${ESHOP_ETC_DIR}/secrets.env}"
 
+# Loopback address and infrastructure ports (fixed by the deployment contract, not overridable).
+ESHOP_LOOPBACK_ADDR="127.0.0.1"
+ESHOP_PG_PORT=5432
+ESHOP_REDIS_PORT=6379
+ESHOP_AMQP_PORT=5672
+export ESHOP_LOOPBACK_ADDR ESHOP_PG_PORT ESHOP_REDIS_PORT ESHOP_AMQP_PORT
+
 # ---------------------------------------------------------------------------
 # Logging (stderr, so stdout stays usable for data)
 # ---------------------------------------------------------------------------
@@ -361,7 +368,7 @@ assert_loopback_listener() {
         seen=1
         addr="$(awk '{print $4}' <<<"${line}")"
         case "${addr}" in
-            127.0.0.1:"${port}"|"[::1]:${port}") ;;
+            "${ESHOP_LOOPBACK_ADDR}:${port}"|"[::1]:${port}") ;;
             *) log_error "${name} listens on ${addr} (expected loopback only)"; bad=1 ;;
         esac
     done < <(ss -H -ltn "sport = :${port}" 2>/dev/null)
