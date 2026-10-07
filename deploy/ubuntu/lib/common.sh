@@ -283,10 +283,6 @@ sd_is_active() {
     have_systemd && systemctl is-active --quiet "$1"
 }
 
-sd_restart() {
-    if have_systemd; then systemctl restart "$1"; else warn_no_systemd "systemctl restart $1"; fi
-}
-
 # ---------------------------------------------------------------------------
 # PostgreSQL helpers
 # ---------------------------------------------------------------------------
@@ -313,29 +309,20 @@ psql_admin() {
 # fall back to the SysV `service` wrapper shipped by the Debian packages, and if
 # even that is unavailable they only warn - provisioning keeps going so the
 # remaining (file based) steps can still be exercised.
-svc_restart() {
-    local name=$1
+# svc_ctl VERB NAME - systemctl VERB NAME; without systemd fall back to SysV `service`, then to a warning.
+svc_ctl() {
+    local verb=$1 name=$2
     if have_systemd; then
-        systemctl restart "${name}"
+        systemctl "${verb}" "${name}"
     elif command_exists service; then
-        log_warn "no systemd: using 'service ${name} restart'"
-        service "${name}" restart || log_warn "service ${name} restart failed"
+        log_warn "no systemd: using 'service ${name} ${verb}'"
+        service "${name}" "${verb}" || log_warn "service ${name} ${verb} failed"
     else
-        warn_no_systemd "restart ${name}"
+        warn_no_systemd "${verb} ${name}"
     fi
 }
-
-svc_start() {
-    local name=$1
-    if have_systemd; then
-        systemctl start "${name}"
-    elif command_exists service; then
-        log_warn "no systemd: using 'service ${name} start'"
-        service "${name}" start || log_warn "service ${name} start failed"
-    else
-        warn_no_systemd "start ${name}"
-    fi
-}
+svc_start()   { svc_ctl start "$1"; }
+svc_restart() { svc_ctl restart "$1"; }
 
 # wait_until TIMEOUT_SECONDS DESCRIPTION CMD... - poll CMD once a second.
 wait_until() {

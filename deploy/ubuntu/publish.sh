@@ -96,7 +96,7 @@ publish_service() {
     if [[ "${restart}" -eq 1 ]]; then
         if sd_is_active "${unit}"; then
             log_info "restarting ${unit}"
-            sd_restart "${unit}"
+            svc_restart "${unit}"
         else
             log_info "${unit} is not active; start it with: systemctl start ${unit}"
         fi

@@ -25,19 +25,13 @@ pg_cluster_exists() {
 
 pg_ready_socket() { pg_isready -q -h /var/run/postgresql; }
 
-pg_start_cluster() {
+# pg_cluster_ctl VERB - start/restart the managed cluster (pg_ctlcluster without systemd).
+pg_cluster_ctl() {
+    local verb=$1
     if have_systemd; then
-        systemctl start "postgresql@${ESHOP_PG_VERSION}-${ESHOP_PG_CLUSTER}"
+        systemctl "${verb}" "postgresql@${ESHOP_PG_VERSION}-${ESHOP_PG_CLUSTER}"
     else
-        pg_ctlcluster "${ESHOP_PG_VERSION}" "${ESHOP_PG_CLUSTER}" start
-    fi
-}
-
-pg_restart_cluster() {
-    if have_systemd; then
-        systemctl restart "postgresql@${ESHOP_PG_VERSION}-${ESHOP_PG_CLUSTER}"
-    else
-        pg_ctlcluster "${ESHOP_PG_VERSION}" "${ESHOP_PG_CLUSTER}" restart
+        pg_ctlcluster "${ESHOP_PG_VERSION}" "${ESHOP_PG_CLUSTER}" "${verb}"
     fi
 }
 
@@ -102,10 +96,10 @@ CONF
     # --- make sure the cluster is running with the new settings -------------------------
     if ! pg_cluster_online; then
         log_info "starting PostgreSQL cluster"
-        pg_start_cluster
+        pg_cluster_ctl start
     elif [[ "${restart_needed}" -eq 1 ]]; then
         log_info "restarting PostgreSQL (listen_addresses changed)"
-        pg_restart_cluster
+        pg_cluster_ctl restart
     fi
     wait_until 60 "PostgreSQL to accept connections" pg_ready_socket \
         || { fail_or_warn "PostgreSQL did not become ready"; return 0; }
@@ -119,7 +113,7 @@ CONF
     listen="$(pg_scalar "SHOW listen_addresses")"
     if [[ "${listen}" != "127.0.0.1" ]]; then
         log_warn "listen_addresses is '${listen}', restarting to apply '127.0.0.1'"
-        pg_restart_cluster
+        pg_cluster_ctl restart
         wait_until 60 "PostgreSQL restart" pg_ready_socket || die "PostgreSQL did not come back after restart"
         listen="$(pg_scalar "SHOW listen_addresses")"
         [[ "${listen}" == "127.0.0.1" ]] || die "PostgreSQL listen_addresses is '${listen}', expected 127.0.0.1"
