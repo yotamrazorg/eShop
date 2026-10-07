@@ -90,7 +90,7 @@
                     RequirePkce = false,
                     RedirectUris = new List<string>
                     {
-                        $"{configuration["WebAppClient"]}/signin-oidc"
+                        $"{configuration["WebAppClient"]}/authentication/login-callback"
                     },
                     PostLogoutRedirectUris = new List<string>
                     {
