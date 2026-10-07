@@ -4,7 +4,6 @@ Each case starts an extra Catalog.API instance (published binary, same /etc/esho
 service, ASPNETCORE_ENVIRONMENT=Production) on its own loopback port with the switch overridden.
 """
 import pytest
-import requests
 
 from conftest import Recorder
 
@@ -15,13 +14,13 @@ ENV_VAR = "ESHOP_EXPOSE_HEALTH_ENDPOINTS"
 def prod(request, instance_factory):
     def start(port, overrides):
         base = instance_factory(port, ["ASPNETCORE_ENVIRONMENT=Production", *overrides])
-        return Recorder(request.node.name, base), base
+        return Recorder(request.node.name, base)
     return start
 
 
 class TestHealthExposure:
     def test_switch_unset_hides_health_and_alive(self, prod):
-        rec, base = prod(5291, [f"-{ENV_VAR}"])
+        rec = prod(5291, [f"-{ENV_VAR}"])
         alive = rec.get("/alive", record=False)
         r = rec.get("/health")
         assert r.status_code == 404
@@ -30,14 +29,14 @@ class TestHealthExposure:
         assert rec.get("/api/catalog/items?api-version=1.0&pageSize=1", record=False).status_code == 200
 
     def test_switch_false_hides_health_and_alive(self, prod):
-        rec, base = prod(5292, [f"{ENV_VAR}=false"])
+        rec = prod(5292, [f"{ENV_VAR}=false"])
         alive = rec.get("/alive", record=False)
         r = rec.get("/health")
         assert r.status_code == 404
         assert alive.status_code == 404
 
     def test_switch_env_true_exposes_health_and_alive(self, prod):
-        rec, base = prod(5293, [f"{ENV_VAR}=true"])
+        rec = prod(5293, [f"{ENV_VAR}=true"])
         alive = rec.get("/alive", record=False)
         r = rec.get("/health")
         assert r.status_code == 200 and r.text == "Healthy"
@@ -45,7 +44,7 @@ class TestHealthExposure:
 
     def test_config_key_true_exposes_health_and_alive(self, prod):
         # ServiceDefaults:ExposeHealthEndpoints via the double-underscore env form.
-        rec, base = prod(5294, [f"-{ENV_VAR}", "ServiceDefaults__ExposeHealthEndpoints=true"])
+        rec = prod(5294, [f"-{ENV_VAR}", "ServiceDefaults__ExposeHealthEndpoints=true"])
         alive = rec.get("/alive", record=False)
         r = rec.get("/health")
         assert r.status_code == 200 and r.text == "Healthy"
