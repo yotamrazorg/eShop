@@ -18,8 +18,13 @@ Used by `src/Identity.API` as the OpenID Connect / OAuth2 provider.
 Used by `src/Ordering.Domain` for in-process domain events.
 
 - **License**: As of **v13.0 (released 2025-07-02)**, MediatR moved from its prior permissive license to the same dual-license model as Duende: [Reciprocal Public License (RPL) 1.5](https://github.com/jbogard/MediatR/blob/master/LICENSE) + a commercial license from [Lucky Penny Software](https://www.lucky-penny.io/).
-- **Status for this repository**: The pin in `Directory.Packages.props` is `13.1.0`, which is already past the v13.0 license change — it does **not** predate the new licensing terms. (A stale `<!-- Before license change -->` comment previously sat above this pin and has been corrected; see `docs/dependency-exceptions.md` history and the `Directory.Packages.props` diff for this milestone.)
-- Same free-use/commercial-license split applies as RPL 1.5 dual-licensed software generally: evaluate under the same production-use criteria as Duende IdentityServer above. **Confirmed acceptable for this repository's reference/sample purpose as of 2026-10-13.** Any organization deploying a fork of this repository to production should independently verify its own licensing obligations and purchase a Lucky Penny Software commercial license if required.
+- **Status for this repository**: The pin in `Directory.Packages.props` is `13.1.0`, which is already past the v13.0 license change — it does **not** predate the new licensing terms. (A stale `<!-- Before license change -->` comment previously sat above this pin and has been corrected; see the inline comment above the `MediatR` `<PackageVersion>` entry in `Directory.Packages.props`.)
+- **Free-use tiers** (no commercial license required), per the [Lucky Penny Software Licensing FAQ](https://luckypennysoftware.com/faq):
+  - Development, testing, evaluation, and classroom/educational use.
+  - Production use under the **Community License**: for-profit organizations with less than $5,000,000 USD annual gross revenue *and* that have never received more than $10,000,000 USD in outside capital (VC/PE funding), or non-profit organizations with less than $5,000,000 USD annual budget.
+  - Government and quasi-government agencies do **not** qualify for the Community License regardless of size.
+- **Commercial license required** for production use by any organization exceeding those revenue/capital/budget thresholds, or by any government/quasi-government agency.
+- **Status for this repository**: `eShop` is a Microsoft reference/sample application, not a revenue-generating product — the Community License free-use tier applies to this codebase as distributed. **Confirmed acceptable for this repository's reference/sample purpose as of 2026-10-13.** Any organization that forks this repository and deploys it to production must independently verify its own eligibility against the thresholds above before going live, and purchase a Lucky Penny Software commercial license if it does not qualify.
 
 ## Recommendation
 
