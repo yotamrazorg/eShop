@@ -147,6 +147,10 @@ When you no longer need the deployment, run [`aspire destroy`](https://aspire.de
 
 For more information on contributing to this repo, read [the contribution documentation](./CONTRIBUTING.md) and [the Code of Conduct](CODE-OF-CONDUCT.md).
 
+### Dependency and licensing notes
+
+Package versions are centrally managed in `Directory.Packages.props`. A small number of packages are pinned to prerelease builds because no stable release exists upstream yet — see [docs/dependency-exceptions.md](docs/dependency-exceptions.md) for the current list and re-check cadence. For the licensing posture of commercially-licensed dependencies (Duende IdentityServer, MediatR), see [LICENSING-NOTES.md](LICENSING-NOTES.md).
+
 ### Sample data
 
 The sample catalog data is defined in [catalog.json](https://github.com/dotnet/eShop/blob/main/src/Catalog.API/Setup/catalog.json). Those product names, descriptions, and brand names are fictional and were generated using [GPT-35-Turbo](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/chatgpt), and the corresponding [product images](https://github.com/dotnet/eShop/tree/main/src/Catalog.API/Pics) were generated using [DALL·E 3](https://openai.com/dall-e-3).
